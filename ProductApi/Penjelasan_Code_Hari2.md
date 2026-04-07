@@ -1,62 +1,224 @@
 # Penjelasan Code Hari 2
 
-Berikut adalah penjelasan per baris kode untuk file-file utama di project Anda (`Program.cs` dan `ProductsController.cs`):
+Berikut adalah penjelasan per blok dan baris kode untuk file-file utama (`Program.cs` dan `ProductsController.cs`). Disertai dengan cuplikan kodenya agar urutan alurnya lebih mudah dipahami.
 
 ---
 
 ## 1. Penjelasan File: `Program.cs`
 
-`Program.cs` adalah titik awal (entry point) aplikasi ASP.NET Core saat dijalankan. Di sini kita men-setup Dependency Injection, mengkonfigurasi pipeline HTTP (Middleware), serta menjalankan server kestrel bawaan .NET.
+File ini adalah *entry point* (titik awal) aplikasi berjalan. Di sini kita memuat variabel lingkungan, mengatur Dependency Injection, serta mengonfigurasi alur web (Middleware pipeline).
 
-### Detail Per Line:
-- **Baris 1-2 (`using ...`)**: Mengimpor ruang lingkup kode (namespace) yang dibutuhkan (berisi library EntityFrameworkCore dan Data Model lokal).
-- **Baris 5 (`DotNetEnv.Env.Load();`)**: Membaca file `.env` untuk mengambil konfigurasi kredensial environment variables (seperti connection string) secara rahasia.
-- **Baris 7 (`var builder = WebApplication.CreateBuilder(args);`)**: Membuat pola `builder` di mana kita bisa mendaftarkan kumpulan layanan internal (Services/DI).
-- **Baris 12 (`builder.Services.AddControllers();`)**: Memerintahkan web-builder untuk mengaktifkan fitur API Controller yang akan me-routing Request kepada `[ApiController]`.
-- **Baris 15-16 (`AddEndpointsApiExplorer` & `AddSwaggerGen`)**: Mengaktifkan Swagger (alat UI untuk ngetes API secara langsung lewat browser sebagai web otomatis dokumentasi API OpenAPI).
-- **Baris 20-21 (`var connectionString = ...`)**: Mencari tahu akses Database. Pertama coba ambil prioritas tertinggi dari Environment Variable `"CONNECTION_STRING"`. Jika kosong / gagal, coba fallback ambil dari profil `Default` di dalam `appsettings.json`.
-- **Baris 23-24 (`builder.Services.AddDbContext...`)**: Mendaftarkan _Database Context_ `AppDbContext` secara global agar bisa dipanggil ke Controllers. Parameter `UseNpgsql` menjelaskan bahwa framework EntityFramework kita terhubung secara native dengan bahasa query database PostgreSQL.
-- **Baris 26 (`var app = builder.Build();`)**: Menutup pembungkusan dari `builder` Service menjadi `app` Middleware web pipeline. Segala yang dieksekusi di bawahnya adalah layer / middleware web HTTP aplikasi.
-- **Baris 31-35 (`if (app.Environment.IsDevelopment()) ...`)**: Mengecek mode eksekusi env lokal (Development). Jika benar, ia me-response dengan fitur UI Swagger, sedangkan di produksi (Production/Release) akan disembunyikan demi keamanan.
-- **Baris 38 (`app.UseAuthorization();`)**: Menginformasikan agar lalu lintas web yang lewat dilewatkan pada modul Otorisasi (cek ijin autentikasi).
-- **Baris 41 (`app.MapControllers();`)**: Menerjemahkan setiap URL rute yang ada (misalnya `/api/products`) ke spesifik Controller bersangkutan.
-- **Baris 43 (`app.Run();`)**: Menjalankan host server dan me-*listen* / diam-diam menunggu merespons request client tanpa henti.
+### Inisialisasi & Setup Awal
+```csharp
+using Microsoft.EntityFrameworkCore;
+using ProductApi.Data;
+
+// Load environment variables dari file .env
+DotNetEnv.Env.Load();
+
+var builder = WebApplication.CreateBuilder(args);
+```
+- **Baris 1-2 (`using ...`)**: Mengimpor modul library Entity Framework Core dan namespace tempat koneksi Data lokal (seperti `AppDbContext`) kita berada.
+- **Baris 5 (`DotNetEnv.Env.Load()`)**: Menginstruksikan aplikasi membaca file `.env` di latar belakang, sehingga variabel kredensial (misal: password dan pengaturan root database) bisa dimuat ke app secara aman.
+- **Baris 7 (`var builder ...`)**: Membuat sebuah pola konfigurasi bernama `builder` yang berfungsi untuk merangkai daftar *layanan (services)* yang bisa dipakai API aplikasi kita.
+
+### Mendaftarkan Layanan (Services)
+```csharp
+// 1. Tambahkan Controllers
+builder.Services.AddControllers();
+
+// 2. Swagger/OpenAPI
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+```
+- **Baris 12 (`AddControllers()`)**: Mengaktifkan modul Controller agar `.NET` mengerti dari mana rute berasal, ini vital untuk API berbasis Controller seperti file kita (`ProductsController`).
+- **Baris 15-16**: Mengaplikasikan fitur *Swagger*. Fitur ini akan otomatis men-*generate* laman UI agar semua spesifikasi JSON endpoint kita terdokumentasi dan dapat diuji langsung dari browser.
+
+### Konfigurasi Database (PostgreSQL)
+```csharp
+var connectionString = Environment.GetEnvironmentVariable("CONNECTION_STRING") 
+                       ?? builder.Configuration.GetConnectionString("Default");
+
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseNpgsql(connectionString));
+```
+- **Baris 20-21**: Berusaha menarik string koneksi akses *Connection String* dari *environment variables*. Tanda `??` (*Null-coalescing*) memberi pengecualian: "Bila kosong (`null`), baru ambil string koneksi dari file *appsettings.json* ".
+- **Baris 23-24 (`AddDbContext<AppDbContext>`)**: Memasukkan `AppDbContext` secara global via koneksi Dependency Injection. Tujuannya supaya *Controllers* kita mudah memanggil DB. `UseNpgsql(...)` mendefinisikan secara pasti bahwa aplikasi berikatan ke *driver* spesifik PostgreSQL.
+
+### Meluncurkan Middleware & Menyalakan App
+```csharp
+var app = builder.Build();
+
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
+
+app.UseAuthorization();
+app.MapControllers();
+
+app.Run();
+```
+- **Baris 26 (`builder.Build()`)**: Mengunci status modifikasi *builder* services dan mencetak hasil jadiannya yakni objek implementasi bernama `app`.
+- **Baris 31-35**: Mengamankan aplikasi dan mengevaluasi mode jalannya. Jika API dieksekusi di server lokal development untuk di-coding, maka sediakan fitur halaman antar-muka *Swagger*. Ia dinon-aktifkan bila server online / Production untuk alasan privasi publik.
+- **Baris 38 (`UseAuthorization()`)**: Menyusun filter layer autentikasi akses dalam request pipeline.
+- **Baris 41 (`MapControllers()`)**: Melacak rute API HTTP dinamis (e.g., `/api/products`) untuk masuk ke Class Controller masing-masing.
+- **Baris 43 (`app.Run()`)**: Kestrel (Web Server default milik .NET) dihidupkan, diam menunggu interaksi _Request_ web dari Client tanpa berhenti.
 
 ---
 
 ## 2. Penjelasan File: `Controllers/ProductsController.cs`
 
-File ini mengelola bagaimana *resource* Produk diproses sebagai API. Menggunakan paradigma RESTful (Get, Post, Put, Delete).
+File ini di khususkan mengelola seluruh lalu lintas request pada objek / entitas *Product*. Desainnya berpola API RESTful klasik (C-R-U-D).
 
-### Detail Per Line:
-- **Baris 1-3 (`using ...`)**: Impor dependensi dari Microsoft API serta namespace internal untuk mengakses Data (`AppDbContext`) dan Tabel Relasional Model (`Product`).
-- **Baris 7 (`[ApiController]`)**: Atribut dasar memberitahu ke .NET bahwa class ini bukan merender tampilan website melainkan data JSON API. Ini memberikan keuntungan seperti HTTP Bad Request validation 400 otomatis.
-- **Baris 8 (`[Route("api/[controller]")]`)**: Variabel rute dasar yang men-transformasi path URL nama controller ini: `ProductsController` sehingga endpoint utamanya adalah `/api/products`.
-- **Baris 9 (`public class ProductsController : ControllerBase`)**: Deklarasi class `ProductsController` yang inheritensi keturunan khusus dari ASP.NET `ControllerBase`.
-- **Baris 11 (`private readonly AppDbContext _context;`)**: Menyediakan kotak _field_ penyimpanan lokal ke akses Database yang bersifat read-only setelah diisi.
-- **Baris 13-16 (`public ProductsController(...)`)**: Fungsi Konstruktor; ketika controller ini terpanggil oleh HTTP, Dependency Injector ASP.NET core otomatis akan mendistribusikan / menginfus object koneksi database (`context`) lewat sini untuk disimpan.
-- **Baris 23 (`[HttpGet]`)**: Fungsi di bawahnya berfungsi untuk menerima permintaan `GET HTTP` (membaca data).
-- **Baris 24-30 (`public IActionResult Get(...)`)**: Method API rute baca yang menangkap berbagai parameter kueri dari URL yaitu `search`, filter harga minimal/maksimal, serta sistem pagination/halaman (`page` & `pageSize`). Semua parameter tersebut diberi atribut parameter bawaan `[FromQuery]`.
-- **Baris 31 (`var query = _context.Products.AsQueryable();`)**: Membuka jalur inisiasi akses tabel (`AsQueryable` memungkinkan modifikasi perintah logika WHERE berulang-ulang tanpa mengeksekusi pengambilan Query ke Database secara permanen dulu).
-- **Baris 34-37 (`if (!string.IsNullOrWhiteSpace(search)) ...`)**: Menambah modifikasi filter logika WHERE apabila ada teks spesifik yang dikirim lewat link, berupa pembandingan huruf kecil string (`.ToLower().Contains(...)`) alias pencarian kata kunci yang tidak sensitif huruf di kolom "Name".
-- **Baris 40-48**: Pengecekan filter "MinPrice" & "MaxPrice" guna membombardir `query` bertahap menyaring Harga dari minimal sampai maksimal jikalau argument angka validnya tidak Null (HasValue bernilai benar).
-- **Baris 51-52 (`... totalItems = query.Count()`)**: Langsung mengeksekusi Query Count PostgreSQL guna mencari jumlah baris tabel secara real-time untuk data laporan metadata jumlah seluruh pagination. Serta menghitung total halaman utuh (`totalPages`).
-- **Baris 55-58 (`var products = query...`)**: Melakukan Pagination data. `.Skip(...)` berfungsi meloncat membuang deretan angka indeks sebanyak list yg ada lalu `.Take(...)` mengambil hanya _range_ porsinya saja. Kemudian `.ToList()` mengeksekusi akhir di Database dan hasilnya disimpan pada array list lokal aplikasi.
-- **Baris 61-71 (`return Ok(...)`)**: Kirim data keluar menuju klien Internet dengan respons Header standard 200 OK berserta serapan output Format JSON gabungan struktur array produk dan data perhitungan metadata pagination.
-- **Baris 78-79 (`[HttpGet("{id}")]`)**: Merespon _request endpoint route_ URL Get Detail yang berformat sisipan dinamis misal : `/api/products/1` (menggantikan ID).
-- **Baris 81 (`_context.Products.Find(id)`)**: Mencari tunggal objek produk dalam Database menggunakan kolom patokan _Primary Key_ ID entitas.
-- **Baris 83-84 (`return NotFound(...)`)**: Cek _safety case_, mengembalikan galat gagal penemuan 404 kalau IDnya nihil.
-- **Baris 86**: Kalau menemukan baris entitasnya kirim output produk (HTTP OK).
-- **Baris 93 (`[HttpPost]`)**: Menangani proses POST, berguna untuk menambahkan row tabel data produk baru ke system.
-- **Baris 94 (`public IActionResult Create(Product product)`)**: Parameter Model `product` bersumber dari tubuh Body data POST dari JSON si pengguna. 
-- **Baris 96-97 (`if (!ModelState.IsValid) ...`)**: Validasi Data Input Manual mengeksekusi respon HTTP "Bad Request 400" jika format data JSON ngaco saat dipetakan.
-- **Baris 99-100 `: Menaruh record entitas lokal tersebut ke EF Core `Products` lalu diteruskan untuk dieksekusi INSERT langsung dan menetap ke dalam PostgreSQL (`SaveChanges()`).
-- **Baris 102 (`return CreatedAtAction(...)`)**: Memberikan balikan header 201 respons success yang mengimplementasikan link tautan ke function `GetById` dengan param ID yang baru spesifik dibuat.
-- **Baris 109-111 (`[HttpPut("{id}")] ...`)**: Memenuhi RESTful API HTTP PUT bertujuan mengubah isi _resource_ (update row tabel spesifik dari suatu ID URL dengan payload model barunya).
-- **Baris 112-118**: Penjagaan input validasi error standar JSON dan _check existence_, temukan dulu objek relasinya, lalu jaminan jika ID tak valid buang ke HTTP Response NotFound 404.
-- **Baris 120-122**: Menimpa entitas yang baru dicungkil _Find_ dengan state atribut values nama serta harga ke memory EF yang baru kemudian dibungkus dan disimpan mutlak di Database SQL DB `_context.SaveChanges()`.
-- **Baris 124 (`return Ok(data);`)**: Memberi response 200 HTTP data utuhnya agar terpercaya di sisi User bila berhasil disunting sempurna.
-- **Baris 131-132 (`[HttpDelete("{id}")] ...`)**: API Rute HTTP Delete bertujuan membersihkan/menghapus _Resource_ secara permanen melalui identitas parameter id yang dilampirkan via URL Link.
-- **Baris 134-137**: Tetap mendeteksi/mengambil entitas aslinya buat dijamin keamanan eksistensinya dulu sebelum dilenyapkan; kembalikan 404 kalau ia tidak ada di tabel.
-- **Baris 139-140 (`_context.Products.Remove(data);`)**: Memberitahukan engine EntityFramework Core untuk menstempel flag "Status Dibuang/Deleted", dimana segera sesudah perintah `SaveChanges()` dijalankan, Eksekusi script SQL Query *DELETE FROM* ke Postgre berjalan membasmi objek itu secara permanen.
-- **Baris 142 (`return Ok(...)`)**: Mengakhiri respon koneksi Delete dengan Status OK yang membungkus pesan JSON _string message_ berformat bahwa namanya telah raib sukses.
+### Atribut Class API & Inisiasi Database Koneksi
+```csharp
+using Microsoft.AspNetCore.Mvc;
+using ProductApi.Data;
+using ProductApi.Models;
+
+namespace ProductApi.Controllers
+{
+    [ApiController]
+    [Route("api/[controller]")]
+    public class ProductsController : ControllerBase
+    {
+        private readonly AppDbContext _context;
+
+        public ProductsController(AppDbContext context)
+        {
+            _context = context;
+        }
+```
+- **Baris 1-3**: Mengimpor struktur MVC di `Microsoft.AspNetCore`, Folder Database Models serta akses folder koneksi DB `AppDbContext`.
+- **Baris 7 (`[ApiController]`)**: Menandakan Class C# ini menaati tingkah laku *Web API*, yaitu memiliki pengecekan form Payload otomatis (menyemburkan status gagal Bad Request [400] kalau parameter / isian JSON nya cacat).
+- **Baris 8 (`[Route("api/[controller]")]`)**: Sebuah magic string *Route* dinamis dari framework yang melekat di ujung url. Di mana kata parameter `[controller]` mengambil label awalan class `Products`, Jadinya `/api/Products`.
+- **Baris 11 (`_context`)**: Wadah objek data lokal (`AppDbContext`) dibuat read-only supaya dijamin murni, tidak tereksekusi tanpa sengaja.
+- **Baris 13-16 (Constructors)**: Pada saat controller diakses dan terbangun, argumen `context` koneksi database akan dikirim masuk ke wadah `_context` secara ajaib karena `Dependency Injector` telah disetel di `Program.cs` tadi.
+
+---
+
+### Metoda REST: 1. HTTP GET (Banyak Data & Pencarian)
+```csharp
+[HttpGet]
+public IActionResult Get([FromQuery] string? search, [FromQuery] decimal? minPrice, 
+                         [FromQuery] decimal? maxPrice, [FromQuery] int page = 1, 
+                         [FromQuery] int pageSize = 10)
+{
+    var query = _context.Products.AsQueryable();
+
+    if (!string.IsNullOrWhiteSpace(search))
+        query = query.Where(p => p.Name.ToLower().Contains(search.ToLower()));
+
+    if (minPrice.HasValue)
+        query = query.Where(p => p.Price >= minPrice.Value);
+
+    if (maxPrice.HasValue)
+        query = query.Where(p => p.Price <= maxPrice.Value);
+```
+- **Baris 23-30**: Menangani HTTP GET `/api/products`. Di sini ada label argumen parameter bernama `[FromQuery]`, yang tugasnya mencegat teks *Query Parameter* setelah penunjuk tanda tanya rute (Misal:  `?search=kabel&minprice=25000&pageSize=10`). 
+- **Baris 31 (`AsQueryable()`)**: Ia melatih jalur eksekusi antrian EntityFramework ini untuk ditambal oleh deretan filter WHERE tanpa eksekusi mutlak dulu (`Lazy loading`).
+- **Baris 34-48**: Fungsi opsional yang menjaring logika argumen. Contoh: kalau isi `search` *gak null*, rangkai modifikasi SQL agar mensyaratkan kolom String `Name` cocok dengan rentang pencarian huruf kecil `.ToLower()`. Berlaku juga untuk filter harga `minPrice` dan `maxPrice`.
+
+```csharp
+    var totalItems = query.Count();
+    var totalPages = (int)Math.Ceiling(totalItems / (double)pageSize);
+
+    var products = query.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+
+    return Ok(new { data = products, pagination = new { currentPage = page, ... } });
+}
+```
+- **Baris 51-52**: Menjalankan eksekusi query SQL mentah `SELECT COUNT(*)` terhadap *Product* ke Postgre untuk laporan total baris, yang lalu dibagi dengan *pageSize* terus dibulatkan ke atas untuk dapat angka total keseluruhan halaman _pagination_ (`Math.Ceiling`).
+- **Baris 55-58 (`Skip...Take...ToList`)**: Menerapkan paging dengan `Skip()` (Melompati daftar rentang sebelumnya) dan `Take()` (Sajikan sebanyak `pageSize` limitnya). Dan ditutup `.ToList()` - pemantik utamanya yang mentranskripsi barisan *Query Builder* ini jadi tarikan data array fisik ke memori aplikasi.
+- **Baris 61-71**: Mem-parsing dan *me-return* balasan standar kode server sukses (Status `200 OK`) bermuatan object gabungan tipe JSON; Ada entitas `data` (segenap baris Produk) dan informasi `pagination`.
+
+---
+
+### Metoda REST: 2. HTTP GET ID (Satu Item)
+```csharp
+[HttpGet("{id}")]
+public IActionResult GetById(int id)
+{
+    var product = _context.Products.Find(id);
+
+    if (product == null)
+        return NotFound(new { message = $"Product dengan ID {id} tidak ditemukan" });
+
+    return Ok(product);
+}
+```
+- **Baris 78 (`"{id}"`)**: Menyematkan tangkapan rentang rute ID di buntut URL layaknya  `/api/products/7` untuk merujuk parameter `id` (value-nya 7).
+- **Baris 81 (`Find(id)`)**: Metode khusus instan pada ORM / _Entity Framework Core_ untuk mencari baris referensi via satu nilai `Primary Key`.
+- **Baris 83-84 (`NotFound(...)`)**: Jika `Find` tak menghasilkan _object referensi_ apapun dari row di database (`null`), lontarkan response kosong tipe _error_  `404 Not Found`.
+
+---
+
+### Metoda REST: 3. HTTP POST (Menambahkan Item Baru)
+```csharp
+[HttpPost]
+public IActionResult Create(Product product)
+{
+    if (!ModelState.IsValid) return BadRequest(ModelState);
+
+    _context.Products.Add(product);
+    _context.SaveChanges();
+
+    return CreatedAtAction(nameof(GetById), new { id = product.Id }, product);
+}
+```
+- **Baris 94 (`Create(Product product)`)**: Sistem Model Binder mencocokkan kiriman teks format JSON (*Request Body*) menjadi object turunan bahasa C# `Product` dan dialiri dalam parameter metoda aksi ini.
+- **Baris 96**: Blok pengaman lapis dua `ModelState.IsValid` (Meski `[ApiController]` sudah mengatasinya di latar) kalau misal input data harganya salah ketik pakai Huruf, ia mengembalikan balasan `Error 400 Bad Request`.
+- **Baris 99 (`Add(product)`)**: Entitas dimasukkan / diagendakan di *tracker* memori `EF Core` secara sepihak buat di-"INSERT"-kan kelak.
+- **Baris 100 (`SaveChanges()`)**: Operasi *Syncing* Data ke PostgreSQL secara pasti. Barulah SQL murni Query eksekusi menempel di Database.
+- **Baris 102 (`CreatedAtAction`)**: Standar *Best Practice* pengembalian Data Rest API - Menerbitkan status kembalian tipe *"201 - Created"*, rute perujukan buat me _review_ Action metode `GetById`, sambil melempar Object Model yang baru dibuat di body Respons.
+
+---
+
+### Metoda REST: 4. HTTP PUT (Mengganti Item Lama Penuh)
+```csharp
+[HttpPut("{id}")]
+public IActionResult Update(int id, Product product)
+{
+    var data = _context.Products.Find(id);
+
+    if (data == null)
+        return NotFound(new { message = $"Product dengan ID {id} tidak ditemukan" });
+
+    data.Name = product.Name;
+    data.Price = product.Price;
+    _context.SaveChanges();
+
+    return Ok(data);
+}
+```
+- **Baris 109**: Rute metode tangkapan buat request tipe PUT khusus `id` tertentu.
+- **Baris 115**: Lakukan pengecekkan referensi ke db `Find(id)`. 
+- **Baris 120-121**: Menempel / menimpakan modifikasi kolom baru (`Name` dan `Price` dari payload JSON argumen `product`) pada variable representasi (`data`) database internal. 
+- **Baris 122 (`SaveChanges()`)**: Setelah itu perubahan disimpan selamanya di DB memakai query *`UPDATE Products...`*.
+- **Baris 124 (`Ok(data)`)**: Lapor ke client dengan response OK (Status 200 HTTP) memuat utuh obyek anyar ini.
+
+---
+
+### Metoda REST: 5. HTTP DELETE (Menghapus Data)
+```csharp
+[HttpDelete("{id}")]
+public IActionResult Delete(int id)
+{
+    var data = _context.Products.Find(id);
+
+    if (data == null)
+        return NotFound(new { message = $"Product dengan ID {id} tidak ditemukan" });
+
+    _context.Products.Remove(data);
+    _context.SaveChanges();
+
+    return Ok(new { message = $"Product '{data.Name}' berhasil dihapus" });
+}
+```
+- **Baris 131**: Spesifik endpoint bertugas dalam merespon HTTP DELETE yang masuk.
+- **Baris 134-137**: Cari *existence* entitasnya (buat dijaga dari resiko error ID invalid); kembali `404 Not Found` ketika nihil target.
+- **Baris 139 (`Remove(data)`)**: Tandai status baris entitasnya ke `EF Core` buat di-"*DROP / REMOVE*".
+- **Baris 140**: Sinkronisasikan eksekusi perintah ke postgre *`DELETE FROM Products...`*.
+- **Baris 142**: Informasikan kelancaran penghapusan file lewat balasan Status kembalian OK (200), terbalut bersama sebuah respon JSON message konfirmasi kustom.
